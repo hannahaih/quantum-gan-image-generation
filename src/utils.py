@@ -61,18 +61,18 @@ def vec_bin_array(arr, m):
 
 import plotly.express as px
 
-def plot_dist(dist):
-    return px.imshow(dist, width=500, height=500, color_continuous_scale='sunset')
+def plot_dist(dist, figure_width=500):
+    return px.imshow(dist, width=figure_width, height=figure_width, color_continuous_scale='sunset')
 
 
 from scipy.ndimage.filters import gaussian_filter
 
-def blur_and_normalize(array, sigma=0.0, show_figure=False):
+def blur_and_normalize(array, sigma=0.0, show_figure=False, figure_width=500):
     blurred = gaussian_filter(array, sigma=sigma)
     dist = blurred / np.sum(blurred)
     
     if show_figure:
-        fig = plot_dist(dist)
+        fig = plot_dist(dist, figure_width=figure_width)
         fig.show()
     
     return dist
