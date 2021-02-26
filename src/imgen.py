@@ -23,7 +23,8 @@ class ImageGenerator():
             epoch_sample_size=1e4, batch_sample_size=1e3,
             generator_learning_rate=1e-3, discriminator_learning_rate=1e-3,
             discriminator_num_nodes_1=50, discriminator_num_nodes_2=10, discriminator_alpha_1=1e-2, discriminator_alpha_2=1e-2,
-            enable_remapping=False, mapping_sample_size=1e6
+            enable_remapping=False, mapping_sample_size=1e6,
+            custom_device=None
         ):
 
         if num_qubits % 2 != 0:
@@ -39,7 +40,11 @@ class ImageGenerator():
         self.__mapping_arr = None   # Array prepared for remapping
         self.__reverse_mapping_arr = None    # Reverse the mapped array for right order
 
-        self.__dev = qml.device('default.qubit', wires=self.__num_qubits, analytic=True, shots=1)
+        if custom_device is not None:
+            self.__dev = custom_device
+        else:
+            self.__dev = qml.device('default.qubit', wires=self.__num_qubits, analytic=True, shots=1)
+        
         self.__generator = qml.QNode(lambda params: generator_prob_circuit(params, self.__num_qubits), self.__dev, interface='tf')
         self.__discriminator_hyperparams = [discriminator_num_nodes_1, discriminator_num_nodes_2, discriminator_alpha_1, discriminator_alpha_2]
         # Using Adam algorithm for generator & discriminator optimization
@@ -95,6 +100,10 @@ class ImageGenerator():
         self.__reverse_mapping_arr = self._reverse_mapping(self.__mapping_arr)
 
         self.reinit() # Initialize discriminator & generator
+    
+
+    def get_real_distribution(self):
+        return copy.deepcopy(self.__real_dist)
 
 
     def make_dataset(self):
