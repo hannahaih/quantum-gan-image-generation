@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 import pennylane as qml
 import tensorflow as tf
@@ -48,24 +49,13 @@ class ImageGenerator():
             dtype='float32'
         )
 
-        self._init_generator()
-        self._init_discriminator()
-
-
-    def _init_generator(self):
-        self.__generator_params = tf.Variable(
-            np.zeros(shape=(self.__num_layers, self.__num_qubits)),
-            dtype='float32'
-        )
-    
-
-    def _init_discriminator(self):
-        self.__discriminator = discriminator_network(*self.__discriminator_hyperparams)
+        self.reinit()
 
 
     def reinit(self):
         self._init_generator()
         self._init_discriminator()
+        self._clear_history()
     
 
     def load_image(self, image, blur_sigma=0.0, show_figure=False):
@@ -81,12 +71,43 @@ class ImageGenerator():
 
         self.__reverse_mapping_arr = self._reverse_mapping(self.__mapping_arr)
 
+        self.reinit()
+
 
     def make_dataset(self):
         train_dataset_raw = self._discrete_sample(self.__real_dist, self.__epoch_sample_size, mapping_arr=self.__mapping_arr).reshape(self.__epoch_sample_size, self.__num_qubits).astype('float32')
         return tf.data.Dataset.from_tensor_slices(train_dataset_raw).shuffle(self.__epoch_sample_size).batch(self.__batch_sample_size)
     
+
+    def get_generator_loss_history(self):
+        return copy.deepcopy(self.__generator_loss_history)
     
+    
+    def get_discriminator_loss_history(self):
+        return copy.deepcopy(self.__discriminator_loss_history)
+
+    
+    def get_output_distribution_history(self):
+        return copy.deepcopy(self.__output_distribution_history)
+    
+
+    def _init_generator(self):
+        self.__generator_params = tf.Variable(
+            np.zeros(shape=(self.__num_layers, self.__num_qubits)),
+            dtype='float32'
+        )
+    
+
+    def _init_discriminator(self):
+        self.__discriminator = discriminator_network(*self.__discriminator_hyperparams)
+    
+
+    def _clear_history(self):
+        self.__generator_loss_history = []
+        self.__discriminator_loss_history = []
+        self.__output_distribution_history = []
+    
+
     def _discriminator_loss(self, real_output, fake_output, fake_output_prob):
         real_loss = self.__cross_entropy(tf.ones_like(real_output), real_output)
         fake_loss = tf.tensordot(self.__cross_entropy_list(tf.zeros_like(fake_output), fake_output), fake_output_prob, 1)
@@ -133,6 +154,9 @@ class ImageGenerator():
     
 
     def _train_step(self, real_sample):
+        gen_loss_arr = []
+        disc_loss_arr = []
+
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             
             fake_output_prob = tf.cast(self.__generator(self.__generator_params), dtype='float32')
@@ -142,27 +166,36 @@ class ImageGenerator():
 
             gen_loss = self._generator_loss(fake_output, fake_output_prob)
             disc_loss = self._discriminator_loss(real_output, fake_output, fake_output_prob)
+            gen_loss_arr.append(gen_loss.numpy())
+            disc_loss_arr.append(disc_loss.numpy())
         
         gradients_of_generator = gen_tape.gradient(gen_loss, [self.__generator_params])
         gradients_of_discriminator = disc_tape.gradient(disc_loss, self.__discriminator.trainable_variables)
 
         self.__generator_optimizer.apply_gradients(zip(gradients_of_generator, [self.__generator_params]))
         self.__discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.__discriminator.trainable_variables))
-    
+
+        return gen_loss_arr, disc_loss_arr
+
 
     def train(self, dataset, num_epochs, show_progress=False):
         for epoch in range(num_epochs):
             
+            output = np.flip(np.array(self.__generator(self.__generator_params)))
+            remapped_output = np.zeros_like(output)
+            for i in range(len(self.__reverse_mapping_arr)):
+                remapped_output[self.__reverse_mapping_arr[i]] = output[i]
+
+            distribution = np.reshape(remapped_output, (self.__image_dim, self.__image_dim))
+
+            self.__output_distribution_history.append(distribution)
+            
             if show_progress:
                 clear_output(wait=True)
                 print('Training epoch {} of {}:'.format(epoch + 1, num_epochs))
-                output = np.flip(np.array(self.__generator(self.__generator_params)))
-                remapped_output = np.zeros_like(output)
-                for i in range(len(self.__reverse_mapping_arr)):
-                    remapped_output[self.__reverse_mapping_arr[i]] = output[i]
-
-                distribution = np.reshape(remapped_output, (self.__image_dim, self.__image_dim))
                 plot_dist(distribution).show()
 
             for image_batch in dataset:
-                self._train_step(image_batch)
+                g, d = self._train_step(image_batch)
+                self.__generator_loss_history.append(g)
+                self.__discriminator_loss_history.append(d)
