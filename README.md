@@ -2,8 +2,8 @@
 
 ## Interactive demonstrations
 
-1. Tutorial and feature showcase: https://allenator.github.io/quantum-gan-image-generation/docs/image-generation
-2. A case study with MNIST: https://allenator.github.io/quantum-gan-image-generation/docs/mnist
+1. [Tutorial and feature showcase](https://allenator.github.io/quantum-gan-image-generation/docs/image-generation)
+2. [A case study with MNIST](https://allenator.github.io/quantum-gan-image-generation/docs/mnist)
 
 ## Introduction
 
