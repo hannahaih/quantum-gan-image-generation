@@ -68,6 +68,15 @@ def plot_dist(dist):
 from scipy.ndimage.filters import gaussian_filter
 
 def blur_and_normalize(array, sigma=0.0, show_figure=False):
+    """
+    Preprocess input image with gaussian filter
+    Args:
+        array: input array from the image
+        sigma (scalar): std for the gaussian kernel
+        show_figure (boolean): True for plotting the processed image
+    Returns:
+        dist (array): output array from preprocessed image
+    """
     blurred = gaussian_filter(array, sigma=sigma)
     dist = blurred / np.sum(blurred)
     

@@ -10,7 +10,12 @@ from src.discriminator import discriminator_network
 
 
 class ImageGenerator():
-
+    """
+    Class to perform image recognition using qGAN. Main process involves: 
+    1) load in image datasets
+    2) create qGAN with quantum generator and classical discriminator
+    3) Train discriminator on tensorflow and update variational quantum circuit
+    """
     def __init__(self,
             num_qubits, num_layers,
             epoch_sample_size=1e4, batch_sample_size=1e3,
@@ -28,9 +33,9 @@ class ImageGenerator():
         self.__image_size = self.__image_dim ** 2
         self.__epoch_sample_size = epoch_sample_size
         self.__batch_sample_size = batch_sample_size
-        self.__real_dist = None
-        self.__mapping_arr = None
-        self.__reverse_mapping_arr = None
+        self.__real_dist = None     # Output array from preprocessed image
+        self.__mapping_arr = None   #
+        self.__reverse_mapping_arr = None    # 
 
         self.__dev = qml.device('default.qubit', wires=self.__num_qubits, analytic=True, shots=1)
         self.__generator = qml.QNode(lambda params: generator_prob_circuit(params, self.__num_qubits), self.__dev, interface='tf')
@@ -59,6 +64,9 @@ class ImageGenerator():
     
 
     def load_image(self, image, blur_sigma=0.0, show_figure=False):
+        """
+        Load in input image, preprocess with gaussian filter, optionally 
+        """
         w, h = image.shape
         if w != self.__image_dim or h != self.__image_dim:
             raise ValueError('Input image must be a {dim} by {dim} floating point array.'.format(dim = self.__image_dim))
@@ -120,6 +128,15 @@ class ImageGenerator():
 
 
     def _discrete_sample(self, dist, num_samples, mapping_arr=None):
+        """
+        Randomly generate discrete sample in arrays of bit vectors
+        Args:
+            dist (arr): input arr from the image
+            num_samples (int): sample size
+            mapping_arr (Optional, arr)
+        Returns:
+            (arr): output arr of bit vectors
+        """
         c = np.random.choice(dist.size, size=num_samples, replace=True, p=dist.flatten())
         if mapping_arr is not None:
             c = mapping_arr[c]
@@ -127,6 +144,9 @@ class ImageGenerator():
 
 
     def _generate_mapping(self, dist, num_samples):
+        """
+        
+        """
         ds = ((self._discrete_sample(self.__real_dist, 10000) + 1) / 2).astype(int)
         unp = np.array([bool2int(x[::-1]) for x in ds])
         u, c = np.unique(unp, return_counts=True)
