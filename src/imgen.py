@@ -1,7 +1,9 @@
 import copy
 import numpy as np
+import pandas as pd
 import pennylane as qml
 import tensorflow as tf
+import plotly.express as px
 from IPython.display import clear_output
 
 from src.utils import blur_and_normalize, vec_bin_array, bool2int, plot_dist
@@ -21,7 +23,7 @@ class ImageGenerator():
             epoch_sample_size=1e4, batch_sample_size=1e3,
             generator_learning_rate=1e-3, discriminator_learning_rate=1e-3,
             discriminator_num_nodes_1=50, discriminator_num_nodes_2=10, discriminator_alpha_1=1e-2, discriminator_alpha_2=1e-2,
-            enable_remapping=True, mapping_sample_size=1e6
+            enable_remapping=False, mapping_sample_size=1e6
         ):
 
         if num_qubits % 2 != 0:
@@ -63,14 +65,11 @@ class ImageGenerator():
         self._clear_history()
     
 
-    def load_image(self, image, blur_sigma=0.0, show_figure=False):
-        """
-        Load in input image, preprocess with gaussian filter, optionally 
-        """
+    def load_image(self, image, blur_sigma=0.0, show_figure=False, figure_width=500):
         w, h = image.shape
         if w != self.__image_dim or h != self.__image_dim:
             raise ValueError('Input image must be a {dim} by {dim} floating point array.'.format(dim = self.__image_dim))
-        self.__real_dist = blur_and_normalize(image, sigma=blur_sigma, show_figure=show_figure)
+        self.__real_dist = blur_and_normalize(image, sigma=blur_sigma, show_figure=show_figure, figure_width=figure_width)
 
         if self.__enable_remapping:
             self.__mapping_arr = self._generate_mapping(self.__real_dist, self.__mapping_sample_size)
@@ -98,6 +97,77 @@ class ImageGenerator():
     def get_output_distribution_history(self):
         return copy.deepcopy(self.__output_distribution_history)
     
+    
+    def get_params_historty(self):
+        return copy.deepcopy(self.__params_history)
+    
+    
+    def get_loss_history_dataframe(self, gen_label='Generator', disc_label='Discriminator'):
+        return pd.DataFrame({
+            gen_label: np.array(self.get_generator_loss_history()).flatten(),
+            disc_label: np.array(self.get_discriminator_loss_history()).flatten()
+        })
+
+
+    def plot_loss_history(self, gen_label='Generator', disc_label='Discriminator'):
+        df = self.get_loss_history_dataframe(gen_label=gen_label, disc_label=disc_label)
+        return px.line(df, labels={
+            'index': 'Step',
+            "value": 'Cross Entropy Loss',
+            'variable': ''
+        }, title='Generator and Discriminator Losses')
+
+
+    def plot_output_distribution_history(self, figure_width=700):
+        arr = self.get_output_distribution_history()
+        return px.imshow(
+            np.array(arr),
+            animation_frame=0,
+            width=figure_width, height=figure_width,
+            color_continuous_scale='sunset',
+            labels={
+                'animation_frame': 'Epoch'
+            },
+            title='Probability Distribution of Circuit Output'
+        )
+
+
+    def get_final_output_distribution(self, avg_window=1):
+        return np.average(np.array(self.get_output_distribution_history()[-avg_window:]), axis=0)
+    
+    
+    def plot_final_output_distribution(self, avg_window=1, figure_width=700):
+        dist = self.get_final_output_distribution(avg_window=avg_window)
+        return plot_dist(dist, figure_width=figure_width)
+
+
+    def get_final_params(self, avg_window=1):
+        return np.average(np.array(self.get_params_historty()[-avg_window:]), axis=0)
+
+
+    def train(self, dataset, num_epochs, show_progress=False, figure_width=500):
+        for epoch in range(num_epochs):
+            
+            output = np.flip(np.array(self.__generator(self.__generator_params)))
+            remapped_output = np.zeros_like(output)
+            for i in range(len(self.__reverse_mapping_arr)):
+                remapped_output[self.__reverse_mapping_arr[i]] = output[i]
+
+            distribution = np.reshape(remapped_output, (self.__image_dim, self.__image_dim))
+
+            self.__output_distribution_history.append(distribution)
+            
+            if show_progress:
+                clear_output(wait=True)
+                print('Training epoch {} of {}:'.format(epoch + 1, num_epochs))
+                plot_dist(distribution, figure_width=figure_width).show()
+
+            for image_batch in dataset:
+                g, d, p = self._train_step(image_batch)
+                self.__generator_loss_history.append(g)
+                self.__discriminator_loss_history.append(d)
+                self.__params_history.append(p)
+
 
     def _init_generator(self):
         self.__generator_params = tf.Variable(
@@ -114,12 +184,13 @@ class ImageGenerator():
         self.__generator_loss_history = []
         self.__discriminator_loss_history = []
         self.__output_distribution_history = []
+        self.__params_history = []
     
 
     def _discriminator_loss(self, real_output, fake_output, fake_output_prob):
         real_loss = self.__cross_entropy(tf.ones_like(real_output), real_output)
         fake_loss = tf.tensordot(self.__cross_entropy_list(tf.zeros_like(fake_output), fake_output), fake_output_prob, 1)
-        total_loss = real_loss + fake_loss
+        total_loss = (real_loss + fake_loss) / 2
         return total_loss
     
 
@@ -176,6 +247,7 @@ class ImageGenerator():
     def _train_step(self, real_sample):
         gen_loss_arr = []
         disc_loss_arr = []
+        params_arr = []
 
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             
@@ -188,6 +260,7 @@ class ImageGenerator():
             disc_loss = self._discriminator_loss(real_output, fake_output, fake_output_prob)
             gen_loss_arr.append(gen_loss.numpy())
             disc_loss_arr.append(disc_loss.numpy())
+            params_arr.append(self.__generator_params.numpy())
         
         gradients_of_generator = gen_tape.gradient(gen_loss, [self.__generator_params])
         gradients_of_discriminator = disc_tape.gradient(disc_loss, self.__discriminator.trainable_variables)
@@ -195,27 +268,4 @@ class ImageGenerator():
         self.__generator_optimizer.apply_gradients(zip(gradients_of_generator, [self.__generator_params]))
         self.__discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.__discriminator.trainable_variables))
 
-        return gen_loss_arr, disc_loss_arr
-
-
-    def train(self, dataset, num_epochs, show_progress=False):
-        for epoch in range(num_epochs):
-            
-            output = np.flip(np.array(self.__generator(self.__generator_params)))
-            remapped_output = np.zeros_like(output)
-            for i in range(len(self.__reverse_mapping_arr)):
-                remapped_output[self.__reverse_mapping_arr[i]] = output[i]
-
-            distribution = np.reshape(remapped_output, (self.__image_dim, self.__image_dim))
-
-            self.__output_distribution_history.append(distribution)
-            
-            if show_progress:
-                clear_output(wait=True)
-                print('Training epoch {} of {}:'.format(epoch + 1, num_epochs))
-                plot_dist(distribution).show()
-
-            for image_batch in dataset:
-                g, d = self._train_step(image_batch)
-                self.__generator_loss_history.append(g)
-                self.__discriminator_loss_history.append(d)
+        return gen_loss_arr, disc_loss_arr, params_arr
