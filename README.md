@@ -6,6 +6,8 @@
 
 ## How-To-Run
 
+The repository for this project can be found [here](https://github.com/Allenator/quantum-gan-image-generation).
+
 We recommend using Anaconda or Miniconda for package management. To install all dependencies, run `conda env create -f environment.yml ` followed by `conda activate qgan-image-generation`.
 
 ## Interactive demonstrations
