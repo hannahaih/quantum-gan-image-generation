@@ -1,4 +1,4 @@
-![image-20210226230511167](README.assets/cover.png)
+![cover](docs/cover.png)
 
 # Image Generation and Distribution Loading with Quantum Generative Adversarial Networks
 
